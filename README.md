@@ -1,2 +1,3 @@
-# wac-launcher
-My personal wac-launcher.
+# WAC-Bootstrap
+
+A lightweight bootstrapper for workstation setup and configuration.
