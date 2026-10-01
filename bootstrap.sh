@@ -90,41 +90,55 @@ run_step() {
 install_packages() {
   case "$OS" in
 		Darwin)
-			echo "Detected Darwin (macOS). You may need to install Homebrew first."
+			echo "Detected Darwin (macOS). Install needed packages..."
       #brew install git curl
       ;;
     Linux)
 			case "$DISTRO" in
 				Ubuntu|Debian)
-					echo "Detected Ubuntu/Debian. You may need to install packages using apt-get."
-          run_as_root apt-get update
-          run_as_root apt-get install -y git curl gpg
+					echo "Detected Ubuntu/Debian. Install needed packages..."
 
-					# Download and verify the GitHub CLI signing key.
-					local out fingerprints expected_fingerprints
-					out=$(mktemp)
-					curl -fsSL -o "$out" https://cli.github.com/packages/githubcli-archive-keyring.gpg
-					gpg --show-keys "$out"
-					fingerprints=$(gpg --show-keys --with-colons "$out" | awk -F: '$1 == "pub" { primary=1; next } primary && $1 == "fpr" { print $10; primary=0 }' | sort)
-					expected_fingerprints=$(printf '%s\n' \
-						2C6106201985B60E6C7AC87323F3D4EA75716059 \
-						7F38BBB59D064DBCB3D84D725612B36462313325 | sort)
-					if [[ "$fingerprints" != "$expected_fingerprints" ]]; then
-						echo "GitHub CLI signing key fingerprint verification failed." >&2
+					# Check if the apt package manager is installed
+					if command -v apt >/dev/null 2>&1; then
+
+						# Update the package list
+						run_as_root apt-get update
+						
+						# Install essential packages
+						run_as_root apt-get install -y git curl gpg software-properties-common
+
+						# Download and verify the GitHub CLI signing key.
+						local out fingerprints expected_fingerprints
+						out=$(mktemp)
+						curl -fsSL -o "$out" https://cli.github.com/packages/githubcli-archive-keyring.gpg
+						gpg --show-keys "$out"
+						fingerprints=$(gpg --show-keys --with-colons "$out" | awk -F: '$1 == "pub" { primary=1; next } primary && $1 == "fpr" { print $10; primary=0 }' | sort)
+						expected_fingerprints=$(printf '%s\n' \
+							2C6106201985B60E6C7AC87323F3D4EA75716059 \
+							7F38BBB59D064DBCB3D84D725612B36462313325 | sort)
+						if [[ "$fingerprints" != "$expected_fingerprints" ]]; then
+							echo "GitHub CLI signing key fingerprint verification failed." >&2
+							rm -f "$out"
+							return 1
+						fi
+						echo "GitHub CLI signing key fingerprints verified."
+
+						# Add the GitHub CLI repository to the system's sources list.
+						run_as_root install -D -m 0644 "$out" /etc/apt/keyrings/githubcli-archive-keyring.gpg
 						rm -f "$out"
-						return 1
-					fi
-					echo "GitHub CLI signing key fingerprints verified."
+						echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | run_as_root tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+						
+						# Add the Ansible repository
+						run_as_root add-apt-repository --yes --update ppa:ansible/ansible
 
-					# Add the GitHub CLI repository to the system's sources list.
-					run_as_root install -D -m 0644 "$out" /etc/apt/keyrings/githubcli-archive-keyring.gpg
-					rm -f "$out"
-					echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | run_as_root tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-					
-					# Update the package list and install the GitHub CLI.
-					run_as_root apt-get update
-					run_as_root apt-get install -y gh
-          ;;
+						# Update the package list and install additional packages
+						run_as_root apt-get update
+						run_as_root apt-get install -y gh ansible
+					else
+						echo "Error: apt is not installed."
+  					exit 1
+					fi
+					;;
         *)
           echo "Paketinstallation für $DISTRO ist noch nicht eingerichtet." >&2
           return 1
